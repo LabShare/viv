@@ -3,6 +3,7 @@ import DeckGL from '@deck.gl/react';
 // No need to use the ES6 or React variants.
 import equal from 'fast-deep-equal';
 import { getVivId } from '../views/utils';
+import { Matrix4 } from 'math.gl';
 
 const areViewStatesEqual = (viewState, otherViewState) => {
   return (
@@ -260,7 +261,7 @@ class VivViewerWrapper extends PureComponent {
   /**
    * This renders the layers in the DeckGL context.
    */
-  _renderLayers() {
+  _renderLayers(loader) {
     const { onHover } = this;
     const { viewStates } = this.state;
     const { views, layerProps } = this.props;
@@ -269,6 +270,7 @@ class VivViewerWrapper extends PureComponent {
         viewStates,
         props: {
           ...layerProps[i],
+          ...(loader !== undefined ? { loader } : {}),
           onHover
         }
       })
@@ -297,6 +299,25 @@ class VivViewerWrapper extends PureComponent {
       deckGLViews[0] = deckGLViews[randomizedIndex];
       deckGLViews[randomizedIndex] = holdFirstElement;
     }
+
+    const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    const layers =
+      this.props.gridLoaders === undefined
+        ? this._renderLayers()
+        : this.props.gridLoaders.loaders.map((loader, i) => {
+            const modelMatrix = new Matrix4(IDENTITY).translate([
+              this.props.gridLoaders.spacingX *
+                (i % this.props.gridLoaders.numberOfColumns),
+              this.props.gridLoaders.spacingY *
+                Math.floor(i / this.props.gridLoaders.numberOfColumns),
+              0
+            ]);
+            return this._renderLayers(loader)[0][0].clone({
+              id: 'ZarrPixelSource-' + i + '-#detail#',
+              modelMatrix
+            });
+          });
+
     return (
       <DeckGL
         // eslint-disable-next-line react/jsx-props-no-spreading
@@ -304,8 +325,8 @@ class VivViewerWrapper extends PureComponent {
         layerFilter={this.layerFilter}
         layers={
           deckProps?.layers === undefined
-            ? [...this._renderLayers()]
-            : [...this._renderLayers(), ...deckProps.layers]
+            ? [...layers]
+            : [...layers, ...deckProps.layers]
         }
         onViewStateChange={this._onViewStateChange}
         views={deckGLViews}
@@ -322,6 +343,11 @@ class VivViewerWrapper extends PureComponent {
 /**
  * This component wraps the DeckGL component.
  * @param {Object} props
+ * @param {Object} props.gridLoaders
+ * @param {Array} props.gridLoaders.loaders Array of loaders
+ * @param {Number} props.gridLoaders.spacingX Horizontal spacing between datasets
+ * @param {Number} props.gridLoaders.spacingY Vertical spacing between datasets
+ * @param {Number} props.gridLoaders.numberOfColumns This determines after how many datasets a new row should be started
  * @param {Array} props.layerProps  Props for the layers in each view.
  * @param {boolean} [props.randomize] Whether or not to randomize which view goes first (for dynamic rendering of multiple linked views).
  * @param {Array.<import('../views').VivView>} props.views Various `VivView`s to render.
